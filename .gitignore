@@ -1,0 +1,54 @@
+# Secrets and local environment
+.env
+.env.*
+
+# Python environments
+venv/
+.venv/
+env/
+
+# Python generated files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Test, coverage and type-checking caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# Streamlit local configuration and secrets
+.streamlit/secrets.toml
+
+# IDE and local history
+.vscode/
+.idea/
+.history/
+*.code-workspace
+
+# Local data and generated model artifacts
+data/*
+!data/.gitkeep
+models/
+artifacts/
+*.joblib
+*.pkl
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
