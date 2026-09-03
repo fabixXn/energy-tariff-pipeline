@@ -67,16 +67,26 @@ def load_tariff_history() -> pd.DataFrame:
 
 def apply_chart_style(fig: go.Figure, height: int = 330) -> go.Figure:
     fig.update_layout(
+        template="plotly_white",
         height=height,
         margin=dict(l=16, r=16, t=42, b=12),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter, Arial, sans-serif", color=NAVY),
+        font=dict(family="Inter, Arial, sans-serif", color=NAVY, size=13),
+        title=dict(font=dict(color=NAVY, size=18)),
         hoverlabel=dict(bgcolor="white", font_color=NAVY),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
-    fig.update_xaxes(showgrid=False, linecolor=GRID)
-    fig.update_yaxes(gridcolor=GRID, zeroline=False)
+    axis_font = dict(color=NAVY, size=12)
+    axis_title_font = dict(color=NAVY, size=13)
+    fig.update_xaxes(
+        showgrid=False, linecolor=GRID, tickfont=axis_font,
+        title_font=axis_title_font, color=NAVY,
+    )
+    fig.update_yaxes(
+        gridcolor=GRID, zeroline=False, tickfont=axis_font,
+        title_font=axis_title_font, color=NAVY,
+    )
     return fig
 
 
@@ -380,6 +390,17 @@ def inject_styles() -> None:
                 radial-gradient(circle at 86% 4%, rgba(183,220,90,.18), transparent 26rem),
                 linear-gradient(145deg, #F4FBF7 0%, #E8F5EE 100%);
         }
+        [data-testid="stAppViewContainer"],
+        [data-testid="stMain"],
+        [data-testid="stMainBlockContainer"] {
+            color: #12372A !important;
+        }
+        [data-testid="stMain"] p,
+        [data-testid="stMain"] span,
+        [data-testid="stMain"] label,
+        [data-testid="stMain"] li {
+            color: #294F41;
+        }
         [data-testid="stHeader"] { background: rgba(244,251,247,.82); }
         [data-testid="stSidebar"] {
             background:
@@ -428,8 +449,12 @@ def inject_styles() -> None:
             box-shadow: 0 10px 28px rgba(18,55,42,.08);
             min-height: 122px;
         }
-        [data-testid="stMetricLabel"] { color: #527065; font-weight: 600; }
-        [data-testid="stMetricValue"] { color: #0B2E25; font-weight: 800; font-size: 1.6rem; }
+        [data-testid="stMetricLabel"],
+        [data-testid="stMetricLabel"] * { color: #527065 !important; font-weight: 600; }
+        [data-testid="stMetricValue"],
+        [data-testid="stMetricValue"] * { color: #0B2E25 !important; font-weight: 800; font-size: 1.6rem; }
+        [data-testid="stMetricDelta"],
+        [data-testid="stMetricDelta"] * { color: #13895A !important; }
         [data-testid="stDataFrame"] {
             border: 1px solid rgba(22,163,106,.2);
             border-radius: 14px;
