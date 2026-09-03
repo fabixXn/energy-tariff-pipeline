@@ -95,14 +95,25 @@ La carga utiliza `if_exists="replace"`: cada ejecución mantiene en la tabla una
 - `cu_lag_3`: CU de hace tres meses.
 - `target_cu_next_month`: CU que se desea predecir para el mes siguiente.
 
-`src/predict.py` entrena un `GradientBoostingRegressor` usando:
+`src/predict.py` compara mediante validación temporal cinco alternativas:
+
+- Baseline persistente (el próximo CU será igual al actual).
+- Ridge.
+- Extra Trees.
+- Random Forest.
+- Gradient Boosting robusto con pérdida Huber.
+
+El sistema publica automáticamente la alternativa con menor MAE. Así evita usar un
+modelo complejo cuando no mejora una referencia sencilla. Los modelos supervisados usan:
 
 - Variables numéricas: CU actual, tres rezagos y mes.
 - Variables categóricas: operador de red y nivel.
 - `OneHotEncoder(handle_unknown="ignore")` para transformar las categorías.
 - `random_state=42` para obtener resultados reproducibles.
 
-Después selecciona el último registro de cada combinación **operador + nivel**, estima su CU del mes siguiente y reemplaza la tabla `tariff_predictions` con los resultados más recientes.
+Después selecciona el último registro de cada combinación **operador + nivel**, estima
+su CU del mes siguiente y reemplaza la tabla `tariff_predictions`. También persiste el
+nombre del modelo, su MAE, el MAE del baseline y la fecha de generación.
 
 ## Evaluación del modelo
 
@@ -165,7 +176,10 @@ Contiene la fotografía limpia del dataset fuente. Entre sus columnas relevantes
 | `last_observed_period` | Último mes disponible |
 | `last_cu` | CU observado en ese mes |
 | `target_period` | Mes para el cual se genera la predicción |
-| `predicted_cu` | CU estimado por el modelo |
+| `predicted_cu` | CU estimado por el modelo seleccionado |
+| `model_name` | Modelo ganador de la validación temporal |
+| `validation_mae` / `baseline_mae` | Comparación de error usada para publicar |
+| `generated_at` | Momento UTC de generación |
 
 ### `pipeline_runs`
 
@@ -316,7 +330,8 @@ streamlit run dashboard/app.py
 
 Streamlit mostrará la URL local, normalmente `http://localhost:8501`.
 
-El dashboard acepta la variable de entorno `DATABASE_URL`. Si no está definida, utiliza la conexión local configurada en Docker Compose:
+Todo el pipeline y el dashboard aceptan la variable de entorno `DATABASE_URL`. Si no
+está definida, utilizan la conexión local configurada en Docker Compose:
 
 ```powershell
 $env:DATABASE_URL = "postgresql+psycopg2://energy_user:energy_pass@localhost:5432/energy_db"
@@ -335,6 +350,26 @@ Una forma clara de presentar el proyecto en dos minutos:
 6. **Consumo:** Streamlit ofrece una vista ejecutiva para operación y otra analítica para explorar cada serie tarifaria.
 7. **Evolución:** como siguiente paso se añadirían tests automatizados, migraciones, manejo centralizado de secretos, evaluación persistida, alertas y un deployment programado de Prefect.
 
+## Despliegue en Render
+
+El repositorio incluye `render.yaml`, que crea mediante un Blueprint:
+
+- Un servicio web de Streamlit.
+- Una base PostgreSQL administrada.
+- La conexión segura mediante `DATABASE_URL`.
+- Una carga completa inicial antes de iniciar el dashboard.
+
+Para desplegar:
+
+1. Publica este repositorio en GitHub.
+2. En Render selecciona **New > Blueprint**.
+3. Conecta el repositorio y confirma el archivo `render.yaml`.
+4. Pulsa **Deploy Blueprint** y espera a que ambos recursos estén disponibles.
+
+El comando de inicio ejecuta `src/run_pipeline.py` sin requerir Prefect Server y luego
+expone Streamlit en el puerto asignado por Render. Prefect se conserva como orquestador
+para la ejecución local y para un futuro servicio de orquestación dedicado.
+
 ## Decisiones técnicas y trade-offs
 
 - **Carga completa (`replace`) frente a incremental:** simplifica la consistencia para un dataset público de tamaño manejable. Con mayor volumen convendría una carga incremental con claves y `upsert`.
@@ -345,7 +380,7 @@ Una forma clara de presentar el proyecto en dos minutos:
 
 ## Mejoras para una versión productiva
 
-- Añadir `requirements.txt` con versiones fijadas.
+- Fijar versiones reproducibles en `requirements.txt`.
 - Centralizar todas las conexiones en variables de entorno o Prefect Blocks.
 - Crear índices, restricciones y migraciones de esquema.
 - Implementar pruebas unitarias y de integración para transformaciones y calidad.

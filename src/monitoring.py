@@ -1,10 +1,6 @@
 from sqlalchemy import create_engine
 import pandas as pd
-
-
-DATABASE_URL = (
-    "postgresql+psycopg2://energy_user:energy_pass@localhost:5432/energy_db"
-)
+from config import get_database_url
 
 
 def save_pipeline_run(
@@ -17,7 +13,7 @@ def save_pipeline_run(
     error_message=None
 ):
 
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(get_database_url())
 
     data = pd.DataFrame([{
         "run_id": run_id,

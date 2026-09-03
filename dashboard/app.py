@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -19,11 +20,12 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+psycopg2://energy_user:energy_pass@localhost:5432/energy_db",
 )
-NAVY = "#12243A"
-TEAL = "#00A6A6"
-BLUE = "#2878B5"
-AMBER = "#F2A900"
-GRID = "rgba(18,36,58,.10)"
+NAVY = "#12372A"
+TEAL = "#16A36A"
+BLUE = "#2F7D65"
+AMBER = "#D8A31A"
+GRID = "rgba(18,55,42,.11)"
+ARCHITECTURE_IMAGE = Path(__file__).parent / "assets" / "pipeline_architecture.png"
 
 
 @st.cache_resource
@@ -46,7 +48,8 @@ def load_pipeline_runs() -> pd.DataFrame:
 def load_predictions() -> pd.DataFrame:
     query = text("""
         SELECT operador_de_red, nivel, last_observed_period, last_cu,
-               target_period, predicted_cu
+               target_period, predicted_cu, model_name, validation_mae,
+               baseline_mae, generated_at
         FROM tariff_predictions
         ORDER BY operador_de_red, nivel, target_period
     """)
@@ -192,6 +195,25 @@ def render_tariff_predictions(predictions: pd.DataFrame, history: pd.DataFrame) 
         / predictions["last_cu"].replace(0, pd.NA) * 100
     )
 
+    model_name = str(predictions["model_name"].dropna().iloc[0])
+    validation_mae = pd.to_numeric(predictions["validation_mae"], errors="coerce").median()
+    baseline_mae = pd.to_numeric(predictions["baseline_mae"], errors="coerce").median()
+    improvement = (
+        (baseline_mae - validation_mae) / baseline_mae * 100
+        if pd.notna(baseline_mae) and baseline_mae else 0
+    )
+    generated = pd.to_datetime(predictions["generated_at"], errors="coerce", utc=True).max()
+    model_cols = st.columns(4)
+    model_cols[0].metric("Modelo publicado", model_name)
+    model_cols[1].metric("MAE de validación", f"{validation_mae:,.2f}")
+    model_cols[2].metric("MAE baseline", f"{baseline_mae:,.2f}")
+    model_cols[3].metric(
+        "Mejora vs. baseline", f"{improvement:+.1f}%",
+        help="Si ningún modelo supera el baseline temporal, se publica el baseline.",
+    )
+    if pd.notna(generated):
+        st.caption(f"Predicciones generadas: {generated.strftime('%d/%m/%Y %H:%M UTC')}")
+
     filter_a, filter_b, _ = st.columns([1.25, 1.25, 2.5])
     operators = sorted(predictions["operador_de_red"].dropna().astype(str).unique())
     with filter_a:
@@ -262,22 +284,167 @@ def render_tariff_predictions(predictions: pd.DataFrame, history: pd.DataFrame) 
             "Variación esperada (%)": st.column_config.NumberColumn(format="%.2f%%"),
         },
     )
+    st.download_button(
+        "Descargar predicciones (CSV)",
+        predictions.to_csv(index=False).encode("utf-8"),
+        file_name="tariff_predictions.csv",
+        mime="text/csv",
+    )
+
+
+def render_how_it_works() -> None:
+    st.markdown('<div class="section-label">ARQUITECTURA</div>', unsafe_allow_html=True)
+    st.subheader("Cómo funciona la solución")
+    st.write(
+        "El proyecto convierte una fuente pública de tarifas en datos confiables, "
+        "predicciones verificadas y métricas operativas listas para consultar."
+    )
+
+    st.image(
+        str(ARCHITECTURE_IMAGE),
+        caption="Arquitectura de extremo a extremo del pipeline de tarifas",
+        use_container_width=True,
+    )
+
+    st.markdown("### Recorrido de los datos")
+    left, right = st.columns(2)
+    with left:
+        st.markdown("""
+        **1. Fuente y extracción**
+
+        `extract.py` consulta Datos Abiertos Colombia mediante HTTP y convierte la
+        respuesta JSON en un DataFrame. Prefect aplica reintentos ante fallos de red.
+
+        **2. Transformación y calidad**
+
+        `transform.py` normaliza operadores, niveles, meses y columnas económicas.
+        `validate.py` bloquea conjuntos vacíos, nulos, negativos, años inválidos y
+        periodos duplicados.
+
+        **3. Persistencia**
+
+        Los registros validados reemplazan la fotografía de `energy_tariffs` en
+        PostgreSQL, que actúa como fuente única para el dashboard.
+        """)
+    with right:
+        st.markdown("""
+        **4. Preparación temporal**
+
+        `prepare_model.py` crea fechas y rezagos de uno, dos y tres meses sin confundir
+        observaciones separadas por huecos temporales.
+
+        **5. Selección y predicción**
+
+        El sistema compara Ridge, Extra Trees, Random Forest y Gradient Boosting contra
+        un baseline. Publica automáticamente la alternativa con menor MAE temporal.
+
+        **6. Observabilidad y consumo**
+
+        Prefect registra tareas y reintentos; `pipeline_runs` conserva estado, duración
+        y volumen. Streamlit presenta operación, histórico y predicciones.
+        """)
+
+    st.markdown("### Qué guarda PostgreSQL")
+    table_cols = st.columns(3)
+    table_cols[0].success(
+        "**energy_tariffs**\n\nHistórico limpio de tarifas y componentes de costo."
+    )
+    table_cols[1].success(
+        "**tariff_predictions**\n\nÚltima observación, proyección, modelo y métricas."
+    )
+    table_cols[2].success(
+        "**pipeline_runs**\n\nEstado, tiempos, volumen y detalle de errores."
+    )
+
+    st.markdown("### Decisión importante del modelo")
+    st.info(
+        "Un algoritmo complejo no se publica solo por ser más sofisticado. Si no "
+        "supera al baseline en datos futuros, el pipeline conserva la alternativa "
+        "más precisa y fácil de explicar."
+    )
 
 
 def inject_styles() -> None:
     st.markdown("""
         <style>
-        .stApp { background: #F6F8FB; }
-        [data-testid="stSidebar"] { background: #12243A; }
-        [data-testid="stSidebar"] * { color: #F4F7FA !important; }
-        .block-container { padding-top: 2.2rem; padding-bottom: 3rem; max-width: 1500px; }
-        h1, h2, h3, h4 { color: #12243A; letter-spacing: -.025em; }
-        .section-label { color: #00A6A6; font-size: .72rem; font-weight: 800; letter-spacing: .14em; margin-top: 1.8rem; }
-        [data-testid="stMetric"] { background: white; border: 1px solid #E7ECF2; border-radius: 12px; padding: 18px 20px; box-shadow: 0 3px 12px rgba(18,36,58,.04); min-height: 118px; }
-        [data-testid="stMetricLabel"] { color: #64748B; }
-        [data-testid="stMetricValue"] { color: #12243A; font-weight: 700; font-size: 1.55rem; }
-        [data-testid="stDataFrame"] { border: 1px solid #E7ECF2; border-radius: 10px; overflow: hidden; }
-        hr { border-color: #E7ECF2; margin: 2.5rem 0; }
+        :root {
+            --forest: #0B2E25;
+            --forest-soft: #123F32;
+            --emerald: #16A36A;
+            --mint: #EAF7F0;
+            --lime: #B7DC5A;
+            --ink: #12372A;
+        }
+        .stApp {
+            background:
+                radial-gradient(circle at 86% 4%, rgba(183,220,90,.18), transparent 26rem),
+                linear-gradient(145deg, #F4FBF7 0%, #E8F5EE 100%);
+        }
+        [data-testid="stHeader"] { background: rgba(244,251,247,.82); }
+        [data-testid="stSidebar"] {
+            background:
+                radial-gradient(circle at 15% 8%, rgba(183,220,90,.13), transparent 15rem),
+                linear-gradient(180deg, #123D31 0%, #09251E 100%);
+            border-right: 1px solid rgba(183,220,90,.18);
+        }
+        [data-testid="stSidebar"] * { color: #F3FBF6 !important; }
+        [data-testid="stSidebar"] hr { border-color: rgba(255,255,255,.12); }
+        [data-testid="stSidebar"] [role="radiogroup"] label {
+            border-radius: 9px;
+            padding: .36rem .55rem;
+            margin-bottom: .15rem;
+            transition: background .2s ease, transform .2s ease;
+        }
+        [data-testid="stSidebar"] [role="radiogroup"] label:hover {
+            background: rgba(255,255,255,.08);
+            transform: translateX(2px);
+        }
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+            line-height: 1.45;
+        }
+        [data-testid="stSidebar"] .stButton button {
+            background: linear-gradient(135deg, #20B978, #13895A) !important;
+            border: 1px solid rgba(255,255,255,.18) !important;
+            color: white !important;
+            font-weight: 700;
+            min-height: 3rem;
+            box-shadow: 0 8px 20px rgba(0,0,0,.18);
+        }
+        [data-testid="stSidebar"] .stButton button:hover {
+            background: linear-gradient(135deg, #2CC986, #179664) !important;
+            color: white !important;
+            border-color: #B7DC5A !important;
+        }
+        .block-container { padding-top: 2.5rem; padding-bottom: 3rem; max-width: 1480px; }
+        h1, h2, h3, h4 { color: #12372A; letter-spacing: -.03em; }
+        h1 { font-weight: 800 !important; }
+        .section-label { color: #13895A; font-size: .72rem; font-weight: 800; letter-spacing: .16em; margin-top: 1.8rem; }
+        [data-testid="stMetric"] {
+            background: linear-gradient(145deg, rgba(255,255,255,.96), rgba(239,250,244,.96));
+            border: 1px solid rgba(22,163,106,.18);
+            border-top: 4px solid #16A36A;
+            border-radius: 16px;
+            padding: 18px 20px;
+            box-shadow: 0 10px 28px rgba(18,55,42,.08);
+            min-height: 122px;
+        }
+        [data-testid="stMetricLabel"] { color: #527065; font-weight: 600; }
+        [data-testid="stMetricValue"] { color: #0B2E25; font-weight: 800; font-size: 1.6rem; }
+        [data-testid="stDataFrame"] {
+            border: 1px solid rgba(22,163,106,.2);
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 8px 24px rgba(18,55,42,.06);
+        }
+        [data-testid="stPlotlyChart"] {
+            background: rgba(255,255,255,.72);
+            border: 1px solid rgba(22,163,106,.15);
+            border-radius: 16px;
+            padding: .75rem;
+            box-shadow: 0 10px 28px rgba(18,55,42,.06);
+        }
+        [data-testid="stAlert"] { border-radius: 12px; }
+        hr { border-color: rgba(22,163,106,.16); margin: 2.5rem 0; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -290,6 +457,11 @@ def main() -> None:
         st.markdown("---")
         st.caption("FUENTE")
         st.markdown("PostgreSQL · actualización en caché")
+        page = st.radio(
+            "NAVEGACIÓN",
+            ["Resumen", "Operación", "Predicciones", "Cómo funciona"],
+            label_visibility="visible",
+        )
         if st.button("Actualizar datos", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
@@ -313,9 +485,47 @@ def main() -> None:
         st.caption(f"Detalle técnico: {exc}")
         st.stop()
 
-    render_pipeline_monitoring(runs)
-    st.divider()
-    render_tariff_predictions(predictions, history)
+    if page == "Resumen":
+        latest = runs.sort_values("started_at", ascending=False).iloc[0]
+        predicted = pd.to_numeric(predictions["predicted_cu"], errors="coerce")
+        current = pd.to_numeric(predictions["last_cu"], errors="coerce")
+        change = (predicted - current) / current.replace(0, pd.NA) * 100
+        summary = st.columns(4)
+        summary[0].metric("Estado del pipeline", str(latest["status"]).upper())
+        summary[1].metric("Series proyectadas", f"{len(predictions):,}")
+        summary[2].metric("CU promedio predicho", f"${predicted.mean():,.2f}")
+        summary[3].metric("Variación promedio", f"{change.mean():+.2f}%")
+        chart_data = predictions.copy()
+        chart_data["serie"] = (
+            chart_data["operador_de_red"].astype(str)
+            + " · " + chart_data["nivel"].astype(str)
+        )
+        chart_data["predicted_cu"] = predicted
+        chart_data = chart_data.sort_values("predicted_cu")
+        overview = go.Figure(go.Bar(
+            x=chart_data["predicted_cu"], y=chart_data["serie"],
+            orientation="h", marker_color=TEAL,
+            hovertemplate="%{y}<br><b>$%{x:,.2f}</b><extra></extra>",
+        ))
+        overview.update_layout(title="CU proyectado por operador y nivel")
+        overview.update_xaxes(title="CU proyectado")
+        st.plotly_chart(apply_chart_style(overview, 390), use_container_width=True)
+        selected_model = str(predictions["model_name"].dropna().iloc[0])
+        if selected_model == "Baseline persistente":
+            st.info(
+                "El baseline obtuvo el menor error temporal. Por eso la proyección "
+                "mantiene el último CU observado y la variación esperada es 0 %."
+            )
+        else:
+            st.success(
+                f"{selected_model} superó el baseline y fue publicado automáticamente."
+            )
+    elif page == "Operación":
+        render_pipeline_monitoring(runs)
+    elif page == "Predicciones":
+        render_tariff_predictions(predictions, history)
+    else:
+        render_how_it_works()
 
 
 if __name__ == "__main__":

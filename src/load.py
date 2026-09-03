@@ -2,16 +2,12 @@ from sqlalchemy import create_engine
 
 from extract import extract_data
 from transform import transform_data
-
-
-DATABASE_URL = (
-    "postgresql+psycopg2://energy_user:energy_pass@localhost:5432/energy_db"
-)
+from config import get_database_url
 
 
 def load_data(df):
 
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(get_database_url())
 
     df.to_sql(
         name="energy_tariffs",

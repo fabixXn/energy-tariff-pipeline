@@ -5,18 +5,10 @@ from transform import transform_data
 
 
 MONTHS = {
-    "Enero": 1,
-    "Febrero": 2,
-    "Marzo": 3,
-    "Abril": 4,
-    "Mayo": 5,
-    "Junio": 6,
-    "Julio": 7,
-    "Agosto": 8,
-    "Septiembre": 9,
-    "Octubre": 10,
-    "Noviembre": 11,
-    "Diciembre": 12,
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4,
+    "mayo": 5, "junio": 6, "julio": 7, "agosto": 8,
+    "septiembre": 9, "setiembre": 9, "octubre": 10,
+    "noviembre": 11, "diciembre": 12,
 }
 
 
@@ -25,7 +17,11 @@ def prepare_model_data(df):
     df = df.copy()
 
     # Convertir el nombre del mes a número
-    df["mes"] = df["periodo"].map(MONTHS)
+    period = df["periodo"].astype("string").str.strip().str.lower()
+    df["mes"] = pd.to_numeric(period, errors="coerce").fillna(period.map(MONTHS))
+    if df["mes"].isna().any():
+        invalid = sorted(period[df["mes"].isna()].dropna().unique())
+        raise ValueError(f"Periodos no reconocidos: {', '.join(invalid)}")
 
     # Crear una fecha real
     df["fecha"] = pd.to_datetime(
@@ -53,6 +49,15 @@ def prepare_model_data(df):
     # Lo que queremos predecir:
     # CU Total del mes siguiente
     df["target_cu_next_month"] = group["cu_total"].shift(-1)
+
+    # No tratar como consecutivos registros separados por huecos temporales.
+    for lag in (1, 2, 3):
+        lag_date = group["fecha"].shift(lag)
+        expected = df["fecha"] - pd.DateOffset(months=lag)
+        df.loc[lag_date.ne(expected), f"cu_lag_{lag}"] = pd.NA
+    next_date = group["fecha"].shift(-1)
+    expected_next = df["fecha"] + pd.DateOffset(months=1)
+    df.loc[next_date.ne(expected_next), "target_cu_next_month"] = pd.NA
 
     return df
 

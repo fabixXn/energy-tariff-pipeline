@@ -1,8 +1,7 @@
 from sqlalchemy import create_engine, text
+from config import get_database_url
 
-DATABASE_URL = "postgresql+psycopg2://energy_user:energy_pass@localhost:5432/energy_db"
-
-engine = create_engine(DATABASE_URL)
+engine = create_engine(get_database_url())
 
 with engine.connect() as connection:
     result = connection.execute(text("SELECT 1;"))

@@ -21,12 +21,13 @@ def transform_data(df):
     df = df.copy()
 
     df = df.drop(
-    columns=[":id", ":version", ":created_at", ":updated_at"]
+        columns=[":id", ":version", ":created_at", ":updated_at"],
+        errors="ignore",
     )
     # 1. Eliminar espacios sobrantes
     df["operador_de_red"] = df["operador_de_red"].str.strip()
     df["nivel"] = df["nivel"].str.strip()
-    df["periodo"] = df["periodo"].str.strip()
+    df["periodo"] = df["periodo"].astype("string").str.strip().str.capitalize()
 
     # 2. Normalizar nombres de operadores
     df["operador_de_red"] = df["operador_de_red"].replace({
